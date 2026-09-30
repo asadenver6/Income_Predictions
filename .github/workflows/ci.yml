@@ -52,9 +52,9 @@ jobs:
       contents: read
     env:
       RUN_GCP_INTEGRATION_TESTS: "1"
-      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      GCP_REGION: ${{ vars.GCP_REGION }}
-      VERTEX_ENDPOINT_ID: ${{ vars.VERTEX_ENDPOINT_ID }}
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'rta-genai-explorations-406d' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'europe-west1' }}
+      VERTEX_ENDPOINT_ID: ${{ vars.VERTEX_ENDPOINT_ID || '5090292434882002944' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

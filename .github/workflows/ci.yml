@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-compile:
+    name: Unit tests and pipeline validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            serving/requirements.txt
+
+      - name: Install project and test dependencies
+        run: python -m pip install -e ".[ml,dev]" -r serving/requirements.txt
+
+      - name: Run unit tests
+        run: python -m pytest tests/unit -v
+
+      - name: Check Python syntax
+        run: python -m compileall -q src scripts pipelines
+
+      - name: Compile Vertex AI pipeline
+        env:
+          PYTHONPATH: src:.
+        run: python pipelines/compile_pipeline.py

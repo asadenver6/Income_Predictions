@@ -11,9 +11,9 @@ pytestmark = pytest.mark.skipif(
     reason="Set RUN_GCP_INTEGRATION_TESTS=1 to run GCP integration tests",
 )
 
-PROJECT_ID = "rta-genai-explorations-406d"
-REGION = "europe-west1"
-ENDPOINT_ID = "5090292434882002944"
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "rta-genai-explorations-406d")
+REGION = os.getenv("GCP_REGION", "europe-west1")
+ENDPOINT_ID = os.getenv("VERTEX_ENDPOINT_ID", "5090292434882002944")
 
 
 @pytest.fixture

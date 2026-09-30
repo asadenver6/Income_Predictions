@@ -11,16 +11,16 @@ pytestmark = pytest.mark.skipif(
     reason="Set RUN_GCP_INTEGRATION_TESTS=1 to run GCP integration tests",
 )
 
-PROJECT_ID = os.getenv("GCP_PROJECT_ID", "rta-genai-explorations-406d")
-REGION = os.getenv("GCP_REGION", "europe-west1")
-ENDPOINT_ID = os.getenv("VERTEX_ENDPOINT_ID", "5090292434882002944")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID") or "rta-genai-explorations-406d"
+REGION = os.getenv("GCP_REGION") or "europe-west1"
+ENDPOINT_ID = os.getenv("VERTEX_ENDPOINT_ID") or "5090292434882002944"
 
 
 @pytest.fixture
 def endpoint():
     aiplatform.init(project=PROJECT_ID, location=REGION)
     return aiplatform.Endpoint(
-        f"projects/856095474659/locations/{REGION}/endpoints/{ENDPOINT_ID}"
+        f"projects/{PROJECT_ID}/locations/{REGION}/endpoints/{ENDPOINT_ID}"
     )
 
 

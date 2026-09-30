@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "income-prediction"
+version = "0.1.0"
+description = "Vertex AI pipeline for Census Adult income classification"
+requires-python = ">=3.10"
+dependencies = [
+    "google-cloud-bigquery>=3.25,<4",
+    "google-cloud-aiplatform>=1.70,<2",
+    "kfp>=2.8,<3",
+    "pandas>=2.2,<3",
+    "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+ml = [
+    "scikit-learn>=1.5,<2",
+    "joblib>=1.4,<2",
+]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=5,<7",
+    "ruff>=0.6,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

@@ -1,0 +1,32 @@
+steps:
+  - name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        pip install --no-cache-dir "pytest>=8,<9" "pandas>=2.2,<3" "scikit-learn>=1.5,<2" "joblib>=1.4,<2" "flask>=3,<4"
+        PYTHONPATH=src python -m pytest tests/unit -v
+        find src/income_prediction -name '*.py' -print0 | xargs -0 python -m py_compile
+
+  - name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        pip install --no-cache-dir "kfp>=2.8,<3"
+        PYTHONPATH=src:. python pipelines/compile_pipeline.py
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - serving/Dockerfile
+      - -t
+      - europe-west1-docker.pkg.dev/rta-genai-explorations-406d/income-prediction/serving:${SHORT_SHA}
+      - .
+
+images:
+  - europe-west1-docker.pkg.dev/rta-genai-explorations-406d/income-prediction/serving:${SHORT_SHA}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

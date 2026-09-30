@@ -1,0 +1,16 @@
+project_id: rta-genai-explorations-406d
+region: europe-west1
+staging_bucket: gs://rta-genai-explorations-406d-staging
+bigquery_source_table: bigquery-public-data.ml_datasets.census_adult_income
+artifact_registry_repository: income-prediction
+model_name: census-adult-income
+endpoint_name: census-adult-income-endpoint
+target_column: income_bracket
+random_seed: 42
+split:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+evaluation_thresholds:
+  f1: 0.60
+  roc_auc: 0.75

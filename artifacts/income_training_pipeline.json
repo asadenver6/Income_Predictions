@@ -1,0 +1,263 @@
+{
+  "components": {
+    "comp-ingest": {
+      "executorLabel": "exec-ingest",
+      "inputDefinitions": {
+        "parameters": {
+          "project_id": {
+            "parameterType": "STRING"
+          },
+          "row_limit": {
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "source_table": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-train-and-evaluate": {
+      "executorLabel": "exec-train-and-evaluate",
+      "inputDefinitions": {
+        "artifacts": {
+          "dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "random_state": {
+            "defaultValue": 42.0,
+            "isOptional": true,
+            "parameterType": "NUMBER_INTEGER"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-validate": {
+      "executorLabel": "exec-validate",
+      "inputDefinitions": {
+        "artifacts": {
+          "dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "validation_report": {
+            "artifactType": {
+              "schemaTitle": "system.Artifact",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    }
+  },
+  "deploymentSpec": {
+    "executors": {
+      "exec-ingest": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "ingest"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery>=3.25,<4' 'db-dtypes>=1.3,<2' 'pandas>=2.2,<3' 'pyarrow>=15,<20'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef ingest(\n    project_id: str,\n    source_table: str,\n    row_limit: int,\n    dataset: Output[Dataset],\n) -> None:\n    \"\"\"Read a BigQuery table and materialize a Parquet pipeline artifact.\"\"\"\n    from google.cloud import bigquery\n\n    client = bigquery.Client(project=project_id)\n    query = f\"SELECT * FROM `{source_table}`\"\n    if row_limit > 0:\n        query += f\" LIMIT {row_limit}\"\n    dataframe = client.query(query).to_dataframe()\n    dataframe.to_parquet(dataset.path, index=False)\n    dataset.metadata[\"source_table\"] = source_table\n    dataset.metadata[\"row_count\"] = len(dataframe)\n\n"
+          ],
+          "image": "python:3.12-slim"
+        }
+      },
+      "exec-train-and-evaluate": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "train_and_evaluate"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas>=2.2,<3' 'pyarrow>=15,<20' 'scikit-learn>=1.5,<2' 'joblib>=1.4,<2'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef train_and_evaluate(\n    dataset: Input[Dataset],\n    model: Output[Model],\n    metrics: Output[Metrics],\n    random_state: int = 42,\n) -> None:\n    \"\"\"Train and evaluate the baseline model inside a pipeline component.\"\"\"\n    import json\n    import joblib\n    import pandas as pd\n    from sklearn.compose import ColumnTransformer\n    from sklearn.impute import SimpleImputer\n    from sklearn.linear_model import LogisticRegression\n    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score\n    from sklearn.model_selection import train_test_split\n    from sklearn.pipeline import Pipeline\n    from sklearn.preprocessing import OneHotEncoder, StandardScaler\n\n    dataframe = pd.read_parquet(dataset.path)\n    feature_columns = [column for column in dataframe.columns if column != \"income_bracket\"]\n    numeric_columns = [\n        \"age\", \"functional_weight\", \"education_num\", \"capital_gain\",\n        \"capital_loss\", \"hours_per_week\",\n    ]\n    categorical_columns = [column for column in feature_columns if column not in numeric_columns]\n    features = dataframe[feature_columns]\n    labels = dataframe[\"income_bracket\"].astype(\"string\").str.strip().map({\"<=50K\": 0, \">50K\": 1})\n    x_train, x_test, y_train, y_test = train_test_split(\n        features, labels.astype(\"int64\"), test_size=0.2, random_state=random_state, stratify=labels\n    )\n    preprocessor = ColumnTransformer(\n        transformers=[\n            (\"numeric\", Pipeline([(\"imputer\", SimpleImputer(strategy=\"median\")), (\"scaler\", StandardScaler())]), numeric_columns),\n            (\"categorical\", Pipeline([(\"imputer\", SimpleImputer(strategy=\"most_frequent\")), (\"encoder\", OneHotEncoder(handle_unknown=\"ignore\"))]), categorical_columns),\n        ]\n    )\n    fitted_model = Pipeline([\n        (\"preprocessor\", preprocessor),\n        (\"classifier\", LogisticRegression(class_weight=\"balanced\", max_iter=1000, random_state=random_state)),\n    ])\n    fitted_model.fit(x_train, y_train)\n    predictions = fitted_model.predict(x_test)\n    probabilities = fitted_model.predict_proba(x_test)[:, 1]\n    values = {\n        \"accuracy\": float(accuracy_score(y_test, predictions)),\n        \"precision\": float(precision_score(y_test, predictions, zero_division=0)),\n        \"recall\": float(recall_score(y_test, predictions, zero_division=0)),\n        \"f1\": float(f1_score(y_test, predictions, zero_division=0)),\n        \"roc_auc\": float(roc_auc_score(y_test, probabilities)),\n    }\n    joblib.dump(fitted_model, model.path)\n    model.metadata[\"feature_columns\"] = feature_columns\n    model.metadata[\"random_state\"] = random_state\n    with open(metrics.path, \"w\", encoding=\"utf-8\") as file:\n        json.dump(values, file, indent=2)\n    for name, value in values.items():\n        metrics.log_metric(name, value)\n\n"
+          ],
+          "image": "python:3.12-slim"
+        }
+      },
+      "exec-validate": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "validate"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'pandas>=2.2,<3' 'pyarrow>=15,<20'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef validate(\n    dataset: Input[Dataset],\n    validation_report: Output[Artifact],\n) -> None:\n    \"\"\"Validate basic dataset shape and persist a quality report.\"\"\"\n    import json\n    import pandas as pd\n\n    dataframe = pd.read_parquet(dataset.path)\n    required = {\n        \"age\", \"workclass\", \"functional_weight\", \"education\", \"education_num\",\n        \"marital_status\", \"occupation\", \"relationship\", \"race\", \"sex\",\n        \"capital_gain\", \"capital_loss\", \"hours_per_week\", \"native_country\",\n        \"income_bracket\",\n    }\n    missing = sorted(required - set(dataframe.columns))\n    if missing:\n        raise ValueError(\"Dataset is missing required columns: \" + \", \".join(missing))\n    labels = {str(value).strip() for value in dataframe[\"income_bracket\"].dropna()}\n    if labels != {\"<=50K\", \">50K\"}:\n        raise ValueError(f\"Unexpected income labels: {sorted(labels)}\")\n    report = {\n        \"row_count\": len(dataframe),\n        \"column_count\": len(dataframe.columns),\n        \"duplicate_row_count\": int(dataframe.duplicated().sum()),\n        \"null_fraction_by_column\": dataframe.isna().mean().to_dict(),\n    }\n    with open(validation_report.path, \"w\", encoding=\"utf-8\") as file:\n        json.dump(report, file, indent=2)\n\n"
+          ],
+          "image": "python:3.12-slim"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "description": "Ingest, validate, train, and evaluate the income model.",
+    "name": "census-adult-income-training"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "ingest": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-ingest"
+          },
+          "inputs": {
+            "parameters": {
+              "project_id": {
+                "componentInputParameter": "project_id"
+              },
+              "row_limit": {
+                "componentInputParameter": "row_limit"
+              },
+              "source_table": {
+                "componentInputParameter": "source_table"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "ingest"
+          }
+        },
+        "train-and-evaluate": {
+          "cachingOptions": {},
+          "componentRef": {
+            "name": "comp-train-and-evaluate"
+          },
+          "dependentTasks": [
+            "ingest",
+            "validate"
+          ],
+          "inputs": {
+            "artifacts": {
+              "dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "dataset",
+                  "producerTask": "ingest"
+                }
+              }
+            },
+            "parameters": {
+              "random_state": {
+                "componentInputParameter": "random_state"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "train-and-evaluate"
+          }
+        },
+        "validate": {
+          "cachingOptions": {},
+          "componentRef": {
+            "name": "comp-validate"
+          },
+          "dependentTasks": [
+            "ingest"
+          ],
+          "inputs": {
+            "artifacts": {
+              "dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "dataset",
+                  "producerTask": "ingest"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "validate"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "project_id": {
+          "defaultValue": "rta-genai-explorations-406d",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "random_state": {
+          "defaultValue": 42.0,
+          "isOptional": true,
+          "parameterType": "NUMBER_INTEGER"
+        },
+        "row_limit": {
+          "defaultValue": 0.0,
+          "isOptional": true,
+          "parameterType": "NUMBER_INTEGER"
+        },
+        "source_table": {
+          "defaultValue": "bigquery-public-data.ml_datasets.census_adult_income",
+          "isOptional": true,
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.17.0"
+}

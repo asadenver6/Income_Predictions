@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - serving/Dockerfile
+      - -t
+      - europe-west1-docker.pkg.dev/rta-genai-explorations-406d/income-prediction/serving:latest
+      - .
+images:
+  - europe-west1-docker.pkg.dev/rta-genai-explorations-406d/income-prediction/serving:latest
